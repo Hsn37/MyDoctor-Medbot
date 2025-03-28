@@ -3,5 +3,4 @@ python-dotenv
 tqdm
 requests
 openai
-google-genai
 qdrant-client

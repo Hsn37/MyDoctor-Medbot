@@ -7,7 +7,6 @@ from pathlib import Path
 from dotenv import load_dotenv
 import time
 import hashlib
-from google.genai import types
 from collections import defaultdict
 from openai import OpenAI
 from qdrant_client import QdrantClient
