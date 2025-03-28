@@ -1,7 +1,6 @@
 import os
 import json
 import logging
-from logservice import log
 
 from typing import List, Dict, Any, Tuple, Optional
 from pathlib import Path
@@ -14,7 +13,6 @@ from openai import OpenAI
 from qdrant_client import QdrantClient
 from qdrant_client.http import models
 from qdrant_client.http.models import Filter, FieldCondition, MatchValue, MatchAny
-from google import genai
 import concurrent.futures
 from threading import Thread
 from queue import Queue
@@ -43,22 +41,18 @@ logger = logging.getLogger("query_processor")
 class UgandaMedicalRAG:
     def __init__(self, 
                  collection_name: str = "uganda_medical",
-                 embedding_model: str = "text-embedding-3-small",
-                 llm_model: str = "gemini-2.0-flash"):
+                 embedding_model: str = "text-embedding-3-small"):
         """Initialize the Uganda Medical RAG system"""
         self.collection_name = collection_name
         self.embedding_model = embedding_model
-        self.llm_model = llm_model
         
         # Initialize API keys
         self.openai_api_key = os.environ.get("OPENAI_API_KEY")
-        self.gemini_api_key = os.environ.get("GEMINI_API_KEY")
         self.openrouter_api_key = os.environ.get("OPENROUTER_API_KEY")
         
         if not self.openai_api_key:
             raise ValueError("OPENAI_API_KEY not found in environment variables")
-        if not self.gemini_api_key:
-            raise ValueError("GEMINI_API_KEY not found in environment variables")
+
         
         # Initialize clients
         self.openai_client = OpenAI(api_key=self.openai_api_key)
@@ -82,8 +76,7 @@ class UgandaMedicalRAG:
         
         logger.info(f"Connected to Qdrant Cloud at {self.qdrant_url}")
         
-        # Initialize Gemini
-        self.gemini_client = genai.Client(api_key=self.gemini_api_key)
+
         
         # Verify the collection exists
         self._verify_collection()
@@ -166,30 +159,7 @@ class UgandaMedicalRAG:
             logger.warning(f"Search error in {category} category: {str(e)}")
             return []
 
-    # def search_with_offset(self, query_vector: List[float], limit: int, offset: int = 0) -> List[Dict]:
-    #     """Search for similar vectors with offset pagination"""
-    #     try:
-    #         search_result = self.qdrant_client.search(
-    #             collection_name=self.collection_name,
-    #             query_vector=query_vector,
-    #             limit=limit,
-    #             offset=offset
-    #         )
-            
-    #         # Convert to dictionary format
-    #         results = [
-    #             {
-    #                 "score": result.score,
-    #                 "payload": result.payload
-    #             }
-    #             for result in search_result
-    #         ]
-            
-    #         return results
-            
-    #     except Exception as e:
-    #         logger.warning(f"Error in offset search: {str(e)}")
-    #         return []
+
     @compute_time
     def build_diverse_context(self, query: str) -> List[Dict]:
         """Build a diverse context by searching different content categories"""
@@ -286,7 +256,7 @@ class UgandaMedicalRAG:
                 content = chunk["payload"]["content"]
                 source = chunk["payload"]["source"]
                 formatted_chunks.append(f"SOURCE: {source}\n{content}\n")
-        #print("formatted_chunks: ",formatted_chunks)
+       # print("formatted_chunks: ",formatted_chunks)
         
         # Join all formatted chunks
         return "\n".join(formatted_chunks)
@@ -310,9 +280,9 @@ class UgandaMedicalRAG:
             "age": 35,
             "location": "Entebbe",
             "budget": "Mid-Low",
-            "critical_conditions": ['diabetic'],
-            "past_medical_history": [],
-            "current_medications": ['Metformin'],
+            "critical_conditions": [],
+            "past_medical_history": ['Malaria'],
+            "current_medications": [],
             "allergies": [],
             "vaccination_history": ['COVID-19']     
         }
@@ -439,41 +409,16 @@ class UgandaMedicalRAG:
     1. Provide only the final answer to the patient
     2. Do NOT include any reasoning, analysis, or internal thoughts
     3. Format your response as if speaking directly to the patient
-    4. For new symptoms: Start with "I'm sorry to hear that, {first_name}" then ask ONE focused question
+    4. ask ONE focused question
     5. For follow-ups: Acknowledge the answer briefly, then ask ONE more question if needed
     6. For diagnosis: Structure as described in DIAGNOSIS STRUCTURE above
     7. For emergencies: Start with "Thank you for telling me {first_name}. What you're describing can be serious..."
+    8. For very first symptom: Start with "I’m really sorry to hear that, {first_name}. I’d like to ask you a few quick questions to get a better idea
+of what might be going on."
 
     Remember to use {first_name} throughout your response to personalize it.
     """
         return prompt
-#     def generate_response(self, prompt: str) -> str:
-#         """Generate a response using Google's Gemini LLM"""
-#         try:
-#             # g_config = types.GenerateContentConfig(
-#             #     temperature=0.1,
-#             #     top_p=0.85,
-#             #     top_k=40,
-#             #     max_output_tokens=8192
-#             # )
-            
-#             # response = self.gemini_client.models.generate_content(
-#             #     model=self.llm_model,
-#             #     contents=prompt,
-#             #     config=g_config
-#             # )
-#             response=self.operouter_client.completions.create(
-#   model="deepseek/deepseek-chat-v3-0324:free",
-#     prompt=prompt,
-#             )
-
-            
-#             # return response.text
-#             return response.choices[0].message.content
-        
-#         except Exception as e:
-#             logger.error(f"Error generating LLM response: {str(e)}")
-#             return "I apologize, but I'm experiencing technical difficulties. Please try again later or contact healthcare support if you need immediate assistance."
     @compute_time  
     def build_retrieval_query(self, current_query: str, message_history: List[Dict[str, str]]) -> str:
         """Build a comprehensive query using conversation history"""
@@ -501,36 +446,6 @@ class UgandaMedicalRAG:
                 break
         
         return retrieval_query
-    # def generate_answer(self, query: str, patient_id: Optional[str] = None, 
-    #                    message_history: Optional[List[Dict[str, str]]] = None) -> str:
-    #     """Process a query end-to-end using diverse context building"""
-    #     try:
-    #         query=self.build_retrieval_query(query, message_history)
-    #         print("query in generate answer : ",query)
-    #         # Build context with specialized category searching
-    #         context_chunks = self.build_diverse_context(query)
-            
-    #         if not context_chunks:
-    #             return "I'm sorry, I couldn't find relevant medical information to answer your question accurately. Please contact a healthcare professional for assistance."
-            
-    #         # Format the context chunks
-    #         formatted_context = self.format_context(context_chunks)
-            
-    #         # Get patient data
-    #         patient_data = self.get_patient_data(patient_id)
-            
-    #         # Construct prompt with context and conversation history
-    #         prompt = self.construct_prompt(query, formatted_context, patient_data, message_history)
-            
-    #         # Generate response
-    #         response = self.generate_response(prompt)
-            
-    #         return response
-            
-    #     except Exception as e:
-    #         logger.error(f"Error processing query: {str(e)}")
-    #         return "I apologize, but I encountered an error while processing your question. Please try again or contact support if the issue persists."
-
     @compute_time
     def build_diverse_context_parallel(self, query: str) -> List[Dict]:
         """Build a diverse context by searching different content categories in parallel"""
@@ -575,31 +490,7 @@ class UgandaMedicalRAG:
                     except Exception as e:
                         logger.error(f"Exception in parallel search for '{category}': {str(e)}")
             
-            # # If we didn't get enough results from filtered searches, try fallback search in parallel
-            # if len(all_results) < 3:
-            #     logger.info("Category searches yielded insufficient results, trying parallel pagination")
-                
-            #     offsets = [0, 2, 4]
-            #     # Function for offset search
-            #     def search_with_offset_wrapper(offset):
-            #         return self.search_with_offset(query_vector, limit=2, offset=offset)
-                
-            #     # Run offset searches in parallel
-            #     with concurrent.futures.ThreadPoolExecutor(max_workers=len(offsets)) as executor:
-            #         offset_results_list = list(executor.map(search_with_offset_wrapper, offsets))
-                
-            #     # Process all offset results
-            #     for offset_results in offset_results_list:
-            #         # Add only new results (avoid duplicates)
-            #         for result in offset_results:
-            #             # Create a simple hash of the content to check for duplicates
-            #             content_hash = hashlib.md5(result["payload"].get("content", "").encode()).hexdigest()
-                        
-            #             # Check if this content is already in all_results
-            #             if not any(hashlib.md5(r["payload"].get("content", "").encode()).hexdigest() == content_hash 
-            #                     for r in all_results):
-            #                 all_results.append(result)
-            
+  
             # Sort all results by relevance
             all_results = sorted(all_results, key=lambda x: x["score"], reverse=True)
             
@@ -646,30 +537,19 @@ class UgandaMedicalRAG:
             # Construct prompt with context and conversation history
             prompt = self.construct_prompt(query, formatted_context, patient_data, message_history)
             
-            # Stream response using Gemini
-            # response_stream = self.gemini_client.models.generate_content_stream(
-            #     model=self.llm_model,
-            #     contents=prompt
-            # )
+
 
             response_stream = self.operouter_client.completions.create(
                 model="deepseek/deepseek-chat-v3-0324:free",
                 prompt=prompt,
-                stop=["##", "Reasoning:", "\n\n"],  # Add stop sequences
-                extra_body={"stop_sequences": ["Thought:"]},  # DeepSeek-specific stop
+                # stop=["##", "Reasoning:", "\n\n"],  # Add stop sequences
+                # extra_body={"stop_sequences": ["Thought:"]},  # DeepSeek-specific stop
                 stream=True
             )
             
-            # Stream the response chunks
-            # for chunk in response_stream:
-            #     if hasattr(chunk, 'text'):
-            #         yield chunk.text
-            # for chunk in response_stream:
-            #     if chunk.choices[0].text is not None:
-            #         yield(chunk.choices[0].text)
-            # Stream the response chunks
+         
             for chunk in response_stream:
-                #print("chunk: ",chunk)
+                print("chunk: ",chunk)
                 # Check if there's a response in the chunk
                 if hasattr(chunk, 'choices') and chunk.choices and len(chunk.choices) > 0:
                     # Extract the text from the choice
