@@ -132,6 +132,34 @@ st.markdown("""
     .nav-button:hover {
         background-color: #ff9414;
     }
+    
+    /* Patient data form styling */
+    .patient-form {
+        background-color: #f5f9fa;
+        padding: 20px;
+        border-radius: 8px;
+        margin-bottom: 20px;
+        border: 1px solid #e0e0e0;
+    }
+    
+    .form-header {
+        color: #087484;
+        font-size: 1.2rem;
+        margin-bottom: 15px;
+        border-bottom: 1px solid #ddd;
+        padding-bottom: 5px;
+    }
+    
+    .toggle-container {
+        background-color: #f5f9fa;
+        padding: 10px 20px;
+        border-radius: 8px;
+        margin-bottom: 20px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        border: 1px solid #e0e0e0;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -139,11 +167,127 @@ st.markdown("""
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
+if "use_patient_data" not in st.session_state:
+    st.session_state.use_patient_data = False
+
+if "patient_data" not in st.session_state:
+    st.session_state.patient_data = {
+        "patient_id": "",
+        "name": "",
+        "age": "",
+        "location": "",
+        "budget": "Mid-Low",
+        "critical_conditions": [],
+        "past_medical_history": [],
+        "current_medications": [],
+        "allergies": [],
+        "vaccination_history": []
+    }
+
+if "patient_data_submitted" not in st.session_state:
+    st.session_state.patient_data_submitted = False
+
 # Logo and App title
 st.markdown('<div class="logo-container"><div class="logo">MD</div></div>', unsafe_allow_html=True)
 st.markdown("<h1 class='main-header'>MyDoctor Health Assistant</h1>", unsafe_allow_html=True)
 st.markdown("<p class='subheader'>Your personal health guide</p>", unsafe_allow_html=True)
 
+# Toggle for patient data usage
+with st.container():
+    st.markdown('<div class="toggle-container">', unsafe_allow_html=True)
+    col1, col2 = st.columns([3, 1])
+    with col1:
+        st.write("**Use Patient Information**")
+        st.caption("Enable to provide personalized health advice based on your medical history")
+    with col2:
+        use_patient_data = st.toggle(
+    "Use Patient Information", 
+    value=st.session_state.use_patient_data, 
+    key="toggle_patient_data",
+    label_visibility="collapsed" 
+)
+        if use_patient_data != st.session_state.use_patient_data:
+            st.session_state.use_patient_data = use_patient_data
+            st.session_state.patient_data_submitted = False
+            st.rerun()
+    st.markdown('</div>', unsafe_allow_html=True)
+
+# Patient data form
+if st.session_state.use_patient_data and not st.session_state.patient_data_submitted:
+    with st.container():
+        st.markdown('<div class="patient-form">', unsafe_allow_html=True)
+        st.markdown('<div class="form-header">Patient Information</div>', unsafe_allow_html=True)
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            # Basic information
+            st.session_state.patient_data["name"] = st.text_input("Full Name", 
+                                                                 value=st.session_state.patient_data["name"])
+            st.session_state.patient_data["patient_id"] = st.text_input("Patient ID (Optional)", 
+                                                                        value=st.session_state.patient_data["patient_id"])
+            st.session_state.patient_data["age"] = st.number_input("Age", min_value=1, max_value=120, 
+                                                                 value=int(st.session_state.patient_data["age"]) if st.session_state.patient_data["age"] else 35)
+            
+            # Location and budget
+            locations = ["Kampala", "Entebbe", "Jinja", "Gulu", "Mbarara", "Other"]
+            location_index = locations.index(st.session_state.patient_data["location"]) if st.session_state.patient_data["location"] in locations else 0
+            st.session_state.patient_data["location"] = st.selectbox("Location", options=locations, index=location_index)
+            
+            budget_options = ["Low", "Mid-Low", "Mid", "Mid-High", "High"]
+            budget_index = budget_options.index(st.session_state.patient_data["budget"]) if st.session_state.patient_data["budget"] in budget_options else 1
+            st.session_state.patient_data["budget"] = st.selectbox("Budget Level", options=budget_options, index=budget_index)
+        
+        with col2:
+            # Medical information
+            critical_conditions_options = ["diabetic", "hypertensive", "pregnant", "asthmatic", "HIV+", "cardiac condition"]
+            st.session_state.patient_data["critical_conditions"] = st.multiselect(
+                "Critical Conditions", 
+                options=critical_conditions_options,
+                default=st.session_state.patient_data["critical_conditions"]
+            )
+            
+            # Common medications
+            common_medications = ["Metformin", "Insulin", "Paracetamol", "Ibuprofen", "Hydrochlorothiazide", "Enalapril"]
+            st.session_state.patient_data["current_medications"] = st.multiselect(
+                "Current Medications",
+                options=common_medications,
+                default=st.session_state.patient_data["current_medications"]
+            )
+            
+            # Common allergies
+            common_allergies = ["Penicillin", "Sulfa", "Latex", "Nuts", "Pollen", "None"]
+            st.session_state.patient_data["allergies"] = st.multiselect(
+                "Allergies",
+                options=common_allergies,
+                default=st.session_state.patient_data["allergies"]
+            )
+            
+            # Vaccinations
+            common_vaccinations = ["COVID-19", "Hepatitis B", "Tetanus", "Typhoid", "Yellow Fever"]
+            st.session_state.patient_data["vaccination_history"] = st.multiselect(
+                "Vaccination History",
+                options=common_vaccinations,
+                default=st.session_state.patient_data["vaccination_history"]
+            )
+            
+            # Additional medical history
+            common_history = ["Surgery", "Malaria", "Typhoid", "Tuberculosis", "Hepatitis"]
+            st.session_state.patient_data["past_medical_history"] = st.multiselect(
+                "Past Medical History",
+                options=common_history,
+                default=st.session_state.patient_data["past_medical_history"]
+            )
+        
+        if st.button("Save and Start Chat", type="primary"):
+            if not st.session_state.patient_data["name"]:
+                st.error("Please enter your name to continue")
+            else:
+                st.session_state.patient_data_submitted = True
+                st.success("Patient information saved successfully!")
+                st.rerun()
+                
+        st.markdown('</div>', unsafe_allow_html=True)
 
 # Emergency warning
 st.markdown("""
@@ -152,79 +296,101 @@ st.markdown("""
 </div>
 """, unsafe_allow_html=True)
 
-try:
-    # Initialize RAG system
-    @st.cache_resource(show_spinner=False)
-    def get_rag_system():
-        from rag_processor import UgandaMedicalRAG
-        return UgandaMedicalRAG()
+# Check if patient data is required but not submitted
+if st.session_state.use_patient_data and not st.session_state.patient_data_submitted:
+    st.info("Please fill in your patient information to start the chat")
+else:
+    try:
+        # Initialize RAG system
+        @st.cache_resource(show_spinner=False)
+        def get_rag_system():
+            from rag_processor import UgandaMedicalRAG
+            return UgandaMedicalRAG()
 
-    # Display loading message while initializing
-    if "rag" not in st.session_state:
-        with st.spinner("Connecting to medical database..."):
-            st.session_state.rag = get_rag_system()
+        # Display loading message while initializing
+        if "rag" not in st.session_state:
+            with st.spinner("Connecting to medical database..."):
+                st.session_state.rag = get_rag_system()
 
-    # Get RAG instance
-    rag = st.session_state.rag
-    
-    # Display initial welcome message if no messages
-    if len(st.session_state.messages) == 0:
-        st.session_state.messages.append(
-            {"role": "assistant", "content": "Hi there! I'm MyDoctor's digital health assistant. You can tell me how you're feeling, and I'll try to help. Tell me about the symptoms you're experiencing!"}
-        )
-
-    # Display chat messages
-    for message in st.session_state.messages:
-        with st.chat_message(message["role"]):
-            st.markdown(message["content"])
-
-    # Chat input
-    if prompt := st.chat_input("Type your symptoms or health question..."):
-        # Add user message to chat history
-        st.session_state.messages.append({"role": "user", "content": prompt})
+        # Get RAG instance
+        rag = st.session_state.rag
         
-        # Display user message in the chat UI
-        with st.chat_message("user"):
-            st.markdown(prompt)
-        
-        # Generate response
-        with st.chat_message("assistant"):
-            message_placeholder = st.empty()
-            full_response = ""
+        # Display initial welcome message if no messages
+        if len(st.session_state.messages) == 0:
+            patient_name = ""
+            if st.session_state.use_patient_data and st.session_state.patient_data_submitted:
+                patient_name = st.session_state.patient_data.get("name", "").split()[0]
+                greeting = f"Hi {patient_name}! I'm MyDoctor's digital health assistant."
+            else:
+                greeting = "Hi there! I'm MyDoctor's digital health assistant."
+                
+            welcome_message = f"{greeting} You can tell me how you're feeling, and I'll try to help. Tell me about the symptoms you're experiencing!"
+            st.session_state.messages.append(
+                {"role": "assistant", "content": welcome_message}
+            )
+
+        # Display chat messages
+        for message in st.session_state.messages:
+            with st.chat_message(message["role"]):
+                st.markdown(message["content"])
+
+        # Chat input
+        if prompt := st.chat_input("Type your symptoms or health question..."):
+            # Add user message to chat history
+            st.session_state.messages.append({"role": "user", "content": prompt})
             
-            try:
-                # Create a proper conversation history from session state
-                conversation_history = list(st.session_state.messages)
+            # Display user message in the chat UI
+            with st.chat_message("user"):
+                st.markdown(prompt)
+            
+            # Generate response
+            with st.chat_message("assistant"):
+                message_placeholder = st.empty()
+                full_response = ""
                 
-                # Stream the response using RAG
-                for response_chunk in rag.generate_answer_stream(
-                    query=prompt, 
-                    message_history=conversation_history
-                ):
-                    full_response += response_chunk
-                    message_placeholder.markdown(full_response + "▌")
-                
-                # Display final response
-                message_placeholder.markdown(full_response)
-                
-                # Add assistant response to chat history
-                st.session_state.messages.append({"role": "assistant", "content": full_response})
-                
-            except Exception as e:
-                error_message = f"I'm sorry, but I encountered an error while processing your question. Please try again."
-                message_placeholder.markdown(error_message)
-                st.error(f"Error details: {str(e)}")
-
-    # Add disclaimer at the bottom
-    st.markdown("""
-    <div class="disclaimer">
-        <p><strong>Medical Disclaimer:</strong> This chatbot provides general information and is not a substitute for professional medical advice, diagnosis, or treatment. Always seek the advice of your physician or other qualified health provider with any questions you may have regarding a medical condition.</p>
-        <p>For in-person care, visit your nearest MyDoctor clinic.</p>
-    </div>
-    """, unsafe_allow_html=True)
-
-except Exception as e:
-    st.error(f"An unexpected error occurred: {str(e)}")
+                try:
+                    # Create a proper conversation history from session state
+                    conversation_history = list(st.session_state.messages)
+                    
+                    # Get patient data if enabled
+                    patient_id = None
+                    if st.session_state.use_patient_data and st.session_state.patient_data_submitted:
+                        # Use UUID as patient ID if not provided
+                        patient_id = st.session_state.patient_data.get("patient_id", "") or f"UG{int(time.time())}"
+                    
+                        # Set the patient data in the RAG
+                        rag.set_patient_data(patient_id, st.session_state.patient_data)
     
-    if st.button("Retry"):
-        st.experimental_rerun()
+                    # Stream the response using RAG
+                    for response_chunk in rag.generate_answer_stream(
+                        query=prompt, 
+                        patient_id=patient_id,
+                        message_history=conversation_history
+                    ):
+                        full_response += response_chunk
+                        message_placeholder.markdown(full_response + "▌")
+                    
+                    # Display final response
+                    message_placeholder.markdown(full_response)
+                    
+                    # Add assistant response to chat history
+                    st.session_state.messages.append({"role": "assistant", "content": full_response})
+                    
+                except Exception as e:
+                    error_message = f"I'm sorry, but I encountered an error while processing your question. Please try again."
+                    message_placeholder.markdown(error_message)
+                    st.error(f"Error details: {str(e)}")
+
+        # Add disclaimer at the bottom
+        st.markdown("""
+        <div class="disclaimer">
+            <p><strong>Medical Disclaimer:</strong> This chatbot provides general information and is not a substitute for professional medical advice, diagnosis, or treatment. Always seek the advice of your physician or other qualified health provider with any questions you may have regarding a medical condition.</p>
+            <p>For in-person care, visit your nearest MyDoctor clinic.</p>
+        </div>
+        """, unsafe_allow_html=True)
+
+    except Exception as e:
+        st.error(f"An unexpected error occurred: {str(e)}")
+        
+        if st.button("Retry"):
+            st.rerun()

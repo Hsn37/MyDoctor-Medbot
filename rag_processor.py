@@ -1,13 +1,15 @@
 import os
 import json
 import logging
+from logservice import log
+
 from typing import List, Dict, Any, Tuple, Optional
 from pathlib import Path
 from dotenv import load_dotenv
 import time
 import hashlib
 from google.genai import types
-
+from collections import defaultdict
 from openai import OpenAI
 from qdrant_client import QdrantClient
 from qdrant_client.http import models
@@ -18,7 +20,15 @@ from threading import Thread
 from queue import Queue
 # Load environment variables
 load_dotenv()
-
+def compute_time(func):
+    def wrapper(*args, **kwargs):
+        start_time = time.time()
+        result = func(*args, **kwargs)
+        end_time = time.time()
+        execution_time = end_time - start_time
+        print(f"\n>> Function '{func.__name__}' took {execution_time:.4f} seconds to execute.\n")
+        return result
+    return wrapper
 # Set up logging
 logging.basicConfig(
     level=logging.INFO,
@@ -84,8 +94,10 @@ class UgandaMedicalRAG:
             "conversation": ["patient_doctor_conversation"],
             "reference": ["medical_handbook", "generic_csv", "jsonl_object", "json_object"]
         }
+        self.patient_data_cache = {}
         
    # Run this once to create payload indexes (add to initialization)
+    @compute_time
     def _verify_collection(self) -> None:
         """Verify and optimize collection configuration"""
         from qdrant_client.http import models as rest
@@ -105,7 +117,8 @@ class UgandaMedicalRAG:
             logger.info("Created payload index for 'format' field")
         except Exception as e:
             logger.info(f"Payload index already exists: {str(e)}")
-    
+
+    @compute_time
     def generate_embedding(self, text: str) -> List[float]:
         """Generate embedding for a text string"""
         try:
@@ -118,7 +131,7 @@ class UgandaMedicalRAG:
         except Exception as e:
             logger.error(f"Error generating embedding: {str(e)}")
             raise
-    
+    @compute_time
     def search_by_category(self, query_vector: List[float], category: str, limit: int) -> List[Dict]:
         """Search with timeout and optimized parameters"""
         try:
@@ -177,7 +190,7 @@ class UgandaMedicalRAG:
     #     except Exception as e:
     #         logger.warning(f"Error in offset search: {str(e)}")
     #         return []
-    
+    @compute_time
     def build_diverse_context(self, query: str) -> List[Dict]:
         """Build a diverse context by searching different content categories"""
         try:
@@ -226,7 +239,7 @@ class UgandaMedicalRAG:
         except Exception as e:
             logger.error(f"Error building diverse context: {str(e)}")
             return []
-    
+    @compute_time
     def format_context(self, context_chunks: List[Dict[str, Any]]) -> str:
         """Format the context chunks for LLM prompt"""
         if not context_chunks:
@@ -277,11 +290,20 @@ class UgandaMedicalRAG:
         
         # Join all formatted chunks
         return "\n".join(formatted_chunks)
+    def set_patient_data(self, patient_id: str, patient_data: Dict[str, Any]) -> None:
+        """Set patient data in the cache"""
+        self.patient_data_cache[patient_id] = patient_data
+        logger.info(f"Patient data set for patient_id: {patient_id}")
     
     def get_patient_data(self, patient_id: Optional[str] = None) -> Dict[str, Any]:
-        """Get patient data from API (or mock data if API not available)"""
-        # For demo purposes, using mock patient records        
-        # Default mock patient
+        """Get patient data from cache or return default if not available"""
+        # If patient_id is provided and exists in cache, return it
+        if patient_id and patient_id in self.patient_data_cache:
+            logger.info(f"Retrieved patient data for patient_id: {patient_id}")
+            return self.patient_data_cache[patient_id]
+            
+        # Return default mock patient data
+        logger.info("Using default patient data")
         return {
             "patient_id": "UG1001",
             "name": "Leticia Okello",
@@ -295,6 +317,7 @@ class UgandaMedicalRAG:
             "vaccination_history": ['COVID-19']     
         }
     
+    @compute_time
     def format_conversation_history(self, message_history: List[Dict[str, str]]) -> Tuple[str, List[str]]:
         """Format conversation history and extract previously asked questions"""
         if not message_history:
@@ -331,36 +354,40 @@ class UgandaMedicalRAG:
                 history_text += f"{i+1}. {question}\n"
         
         return history_text, asked_questions
-    
+    @compute_time
     def construct_prompt(self, query: str, context: str, patient_data: Dict[str, Any], 
-                 message_history: Optional[List[Dict[str, str]]] = None) -> str:
+                    message_history: Optional[List[Dict[str, str]]] = None) -> str:
         """Construct the improved prompt for the LLM to encourage step-by-step questioning"""
-        # Extract first name for personalized responses
-        first_name = patient_data.get('name', 'Unknown').split()[0] if patient_data.get('name') else "there"
+        # Convert patient_data to a defaultdict with "Unknown" as default value
+        patient = defaultdict(lambda: "Unknown", patient_data or {})
         
-        # Format patient data
+        # Extract first name for personalized responses
+        first_name = patient["name"].split()[0] if patient["name"] != "Unknown" else "there"
+        
+        # Format patient data using defaultdict (cleaner approach)
         patient_info = f"""
     PATIENT INFORMATION:
-    - Name: {patient_data.get('name', 'Unknown')} (First name: {first_name})
-    - ID: {patient_data.get('patient_id', 'Unknown')}
-    - Age: {patient_data.get('age', 'Unknown')}
-    - Location: {patient_data.get('location', 'Unknown')}
-    - Budget Level: {patient_data.get('budget', 'Unknown')}
-    - Critical Conditions: {', '.join(patient_data.get('critical_conditions', ['None']))}
-    - Past Medical History: {', '.join(patient_data.get('past_medical_history', ['None']))}
-    - Current Medications: {', '.join(patient_data.get('current_medications', ['None']))}
-    - Allergies: {', '.join(patient_data.get('allergies', ['None']))}
-    - Vaccination History: {', '.join(patient_data.get('vaccination_history', ['None']))}
+    - Name: {patient["name"]} (First name: {first_name})
+    - ID: {patient["patient_id"]}
+    - Age: {patient["age"]}
+    - Location: {patient["location"]}
+    - Budget Level: {patient["budget"]}
+    - Critical Conditions: {', '.join(patient.get("critical_conditions", ["None"]))}
+    - Past Medical History: {', '.join(patient.get("past_medical_history", ["None"]))}
+    - Current Medications: {', '.join(patient.get("current_medications", ["None"]))}
+    - Allergies: {', '.join(patient.get("allergies", ["None"]))}
+    - Vaccination History: {', '.join(patient.get("vaccination_history", ["None"]))}
     """
 
         # Format conversation history
         conversation_history,asked_q = self.format_conversation_history(message_history) if message_history else ""
-        print("asked_q: ",asked_q)
-        print("conversation_history: ",conversation_history)
+        # print("asked_q: ",asked_q)
+        # print("conversation_history: ",conversation_history)
+        # print("patient_info: ",patient_info)
 
         # Main prompt with improved instructions
         prompt = f"""You are a medical assistant for patients in Uganda. You help patients by asking relevant questions about their symptoms before providing any diagnosis. Follow these instructions carefully:
-
+ 
     1. CONVERSATION STYLE:
     - Be warm and friendly, always address the patient as "{first_name}"
     - Use a reassuring tone but be direct with urgent issues
@@ -409,10 +436,13 @@ class UgandaMedicalRAG:
     CURRENT QUERY: {query}
 
     RESPONSE FORMAT:
-    1. For new symptoms: Start with "I'm sorry to hear that, {first_name}" then ask ONE focused question
-    2. For follow-ups: Acknowledge the answer briefly, then ask ONE more question if needed
-    3. For diagnosis: Structure as described in DIAGNOSIS STRUCTURE above
-    4. For emergencies: Start with "Thank you for telling me {first_name}. What you're describing can be serious..."
+    1. Provide only the final answer to the patient
+    2. Do NOT include any reasoning, analysis, or internal thoughts
+    3. Format your response as if speaking directly to the patient
+    4. For new symptoms: Start with "I'm sorry to hear that, {first_name}" then ask ONE focused question
+    5. For follow-ups: Acknowledge the answer briefly, then ask ONE more question if needed
+    6. For diagnosis: Structure as described in DIAGNOSIS STRUCTURE above
+    7. For emergencies: Start with "Thank you for telling me {first_name}. What you're describing can be serious..."
 
     Remember to use {first_name} throughout your response to personalize it.
     """
@@ -444,7 +474,7 @@ class UgandaMedicalRAG:
 #         except Exception as e:
 #             logger.error(f"Error generating LLM response: {str(e)}")
 #             return "I apologize, but I'm experiencing technical difficulties. Please try again later or contact healthcare support if you need immediate assistance."
-        
+    @compute_time  
     def build_retrieval_query(self, current_query: str, message_history: List[Dict[str, str]]) -> str:
         """Build a comprehensive query using conversation history"""
         
@@ -501,7 +531,7 @@ class UgandaMedicalRAG:
     #         logger.error(f"Error processing query: {str(e)}")
     #         return "I apologize, but I encountered an error while processing your question. Please try again or contact support if the issue persists."
 
-
+    @compute_time
     def build_diverse_context_parallel(self, query: str) -> List[Dict]:
         """Build a diverse context by searching different content categories in parallel"""
         try:
@@ -579,6 +609,7 @@ class UgandaMedicalRAG:
         except Exception as e:
             logger.error(f"Error building diverse context in parallel: {str(e)}")
             return []
+    @compute_time
     def generate_answer_stream(self, query: str, patient_id: Optional[str] = None,
                             message_history: Optional[List[Dict[str, str]]] = None):
         """Process a query and stream the answer with conversation-aware context building"""
@@ -621,12 +652,12 @@ class UgandaMedicalRAG:
             #     contents=prompt
             # )
 
-            response_stream=self.operouter_client.completions.create(
-  model="deepseek/deepseek-chat-v3-0324:free",
-  prompt=prompt,
-#   stop=["##", "BEGIN ASSISTANT RESPONSE"],
-  extra_body={},
-  stream=True
+            response_stream = self.operouter_client.completions.create(
+                model="deepseek/deepseek-chat-v3-0324:free",
+                prompt=prompt,
+                stop=["##", "Reasoning:", "\n\n"],  # Add stop sequences
+                extra_body={"stop_sequences": ["Thought:"]},  # DeepSeek-specific stop
+                stream=True
             )
             
             # Stream the response chunks
@@ -638,6 +669,7 @@ class UgandaMedicalRAG:
             #         yield(chunk.choices[0].text)
             # Stream the response chunks
             for chunk in response_stream:
+                #print("chunk: ",chunk)
                 # Check if there's a response in the chunk
                 if hasattr(chunk, 'choices') and chunk.choices and len(chunk.choices) > 0:
                     # Extract the text from the choice
