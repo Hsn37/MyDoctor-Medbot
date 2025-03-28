@@ -548,7 +548,7 @@ of what might be going on."
             
          
             for chunk in response_stream:
-                print("chunk: ",chunk)
+                # print("chunk: ",chunk)
                 # Check if there's a response in the chunk
                 if hasattr(chunk, 'choices') and chunk.choices and len(chunk.choices) > 0:
                     # Extract the text from the choice
