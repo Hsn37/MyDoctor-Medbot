@@ -446,7 +446,11 @@ class UgandaMedicalRAG:
     - Adjust advice based on medical history
 
 
-    
+    8. Final Response:
+    - Detail the diagnosis and next steps clearly
+    - Relate to the patient's context and location
+    - Avoid unnecessary medical jargon
+    - Use simple language for better understanding
 
 
     {patient_info}
