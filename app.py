@@ -2,6 +2,7 @@ import os
 import streamlit as st
 from dotenv import load_dotenv
 import time
+import streamlit.components.v1 as components
 
 # Load environment variables
 load_dotenv()
@@ -160,6 +161,31 @@ st.markdown("""
         justify-content: space-between;
         border: 1px solid #e0e0e0;
     }
+    /* Style for clear chat button */
+    .clear-button {
+        background-color: #f0f0f0;
+        color: #333;
+        border: 1px solid #ddd;
+        border-radius: 4px;
+        padding: 0.5rem 1rem;
+        font-size: 0.8rem;
+        cursor: pointer;
+        transition: all 0.3s;
+        float: right;
+        margin-bottom: 10px;
+    }
+    
+    .clear-button:hover {
+        background-color: #ff9414;
+        color: white;
+        border-color: #ff9414;
+    }
+    
+    .button-container {
+        display: flex;
+        justify-content: flex-end;
+        margin-bottom: 10px;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -191,7 +217,11 @@ if "patient_data_submitted" not in st.session_state:
 st.markdown('<div class="logo-container"><div class="logo">MD</div></div>', unsafe_allow_html=True)
 st.markdown("<h1 class='main-header'>MyDoctor Health Assistant</h1>", unsafe_allow_html=True)
 st.markdown("<p class='subheader'>Your personal health guide</p>", unsafe_allow_html=True)
-
+def clear_chat_history():
+    """Clear the chat history in session state"""
+    if "messages" in st.session_state:
+        st.session_state.messages = []
+    st.rerun()
 # Toggle for patient data usage
 with st.container():
     st.markdown('<div class="toggle-container">', unsafe_allow_html=True)
@@ -295,7 +325,11 @@ st.markdown("""
     ⚠️ If you are experiencing a medical emergency, please call emergency services immediately or go to your nearest emergency department.
 </div>
 """, unsafe_allow_html=True)
-
+if st.session_state.messages:  # Only show if there are messages
+    cols = st.columns([4, 1])
+    with cols[1]:
+        if st.button("Clear Chat", type="secondary", use_container_width=True):
+            clear_chat_history()
 # Check if patient data is required but not submitted
 if st.session_state.use_patient_data and not st.session_state.patient_data_submitted:
     st.info("Please fill in your patient information to start the chat")
