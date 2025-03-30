@@ -380,6 +380,38 @@ else:
             # Generate response
             with st.chat_message("assistant"):
                 message_placeholder = st.empty()
+                # message_placeholder.markdown("Bot is typing...")
+                context = "Bot is typing.."
+
+                message_placeholder.markdown(f"""
+                    <div class="loading-container">
+                        <div class="loading-spinner"></div>
+                        <div class="loading-text">{context}</div>
+                    </div>
+                    <style>
+                        .loading-container {{
+                            display: flex;
+                            align-items: center;
+                            color: #087484;
+                            font-style: italic;
+                            padding: 5px;
+                        }}
+                        .loading-spinner {{
+                            border: 3px solid #f3f3f3;
+                            border-top: 3px solid #087484;
+                            border-radius: 50%;
+                            width: 20px;
+                            height: 20px;
+                            animation: spin 2s linear infinite;
+                            margin-right: 10px;
+                        }}
+                        @keyframes spin {{
+                            0% {{ transform: rotate(0deg); }}
+                            100% {{ transform: rotate(360deg); }}
+                        }}
+                    </style>    
+                """, unsafe_allow_html=True)   
+                     
                 full_response = ""
                 
                 try:
