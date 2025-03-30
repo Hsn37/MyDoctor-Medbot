@@ -380,38 +380,53 @@ else:
             # Generate response
             with st.chat_message("assistant"):
                 message_placeholder = st.empty()
-                # message_placeholder.markdown("Bot is typing...")
-                context = "Bot is typing.."
-
-                message_placeholder.markdown(f"""
-                    <div class="loading-container">
-                        <div class="loading-spinner"></div>
-                        <div class="loading-text">{context}</div>
+                
+                message_placeholder.markdown("""
+                    <div class="typing-wrapper">
+                        <div class="typing-indicator">
+                            <div class="typing-spinner"></div>
+                            <div class="typing-text">Bot is typing...</div>
+                        </div>
                     </div>
+                    
                     <style>
-                        .loading-container {{
+                        /* Force proper alignment with avatar */
+                        .typing-wrapper {
                             display: flex;
                             align-items: center;
+                            min-height: 32px;
+                            margin: -12px 0;  /* Counteract Streamlit's default margins */
+                        }
+                        
+                        .typing-indicator {
+                            display: flex;
+                            align-items: center;
+                            gap: 8px;
+                        }
+                        
+                        .typing-spinner {
+                            width: 16px;
+                            height: 16px;
+                            border: 2px solid #f3f3f3;
+                            border-top: 2px solid #087484;
+                            border-radius: 50%;
+                            animation: spin 1s linear infinite;
+                            flex-shrink: 0;
+                        }
+                        
+                        .typing-text {
                             color: #087484;
                             font-style: italic;
-                            padding: 5px;
-                        }}
-                        .loading-spinner {{
-                            border: 3px solid #f3f3f3;
-                            border-top: 3px solid #087484;
-                            border-radius: 50%;
-                            width: 20px;
-                            height: 20px;
-                            animation: spin 2s linear infinite;
-                            margin-right: 10px;
-                        }}
-                        @keyframes spin {{
-                            0% {{ transform: rotate(0deg); }}
-                            100% {{ transform: rotate(360deg); }}
-                        }}
-                    </style>    
+                            font-size: 15px;
+                        }
+                        
+                        @keyframes spin {
+                            0% { transform: rotate(0deg); }
+                            100% { transform: rotate(360deg); }
+                        }
+                    </style>
                 """, unsafe_allow_html=True)   
-                     
+
                 full_response = ""
                 
                 try:

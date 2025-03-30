@@ -470,8 +470,8 @@ class UgandaMedicalRAG:
     1. Provide only the final answer to the patient in any response
     2. Format your response as if speaking directly to the patient
     3. For diagnosis: Use the format described in DIAGNOSIS FORMAT section above
-    4. For emergencies: Start with "Thank you for telling me {first_name}. What you're describing can be serious..."
-    5- For very first symptom: Start with 'I’m really sorry to hear you're feeling unwell {first_name}. To understand things better before suggesting any possible causes, I’d like to ask you a few quick questions to get a better idea of what might be going on'
+    4. For emergencies: Start with "Thank you for telling me {first_name}. What you're describing can be serious...". However, also be smart enough to not use this line if someone is saying I am going to die or help me please or things along these lines. Respond accordingly to these.
+    5- For very first symptom: Start with 'I’m really sorry to hear you're feeling unwell {first_name}. To understand things better before suggesting any possible causes, I’d like to ask you a few quick questions to get a better idea of what might be going on'. However, also be smart enough to not use this line if someone is saying completely different thing in the start which is not related to symptoms. Respond accordingly in a nice polite way in this case.
     6. Dont use {first_name} in the response to the patient, just use "you" or "your"
     """
         return prompt
