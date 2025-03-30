@@ -408,22 +408,24 @@ class UgandaMedicalRAG:
     - Don't start every message with greetings like "Hello" or "Hi"
 
     2. DIAGNOSIS TIMING - VERY IMPORTANT:
-    - Wait for sufficient useful information before diagnosing
-    - If the patient has already provided a lot of information, you can diagnose sooner
+    - PRIORITIZE THOROUGH INFORMATION GATHERING. Do NOT provide a diagnosis until you have gathered detailed information covering atleast the symptom's onset (when it started), duration (how long it's lasted), severity (how bad it is), character (what it feels like, e.g., sharp/dull pain, wet/dry cough), and any associated symptoms (what else is happening?).
+    - Avoid diagnosing after only one or two symptom exchanges unless it is an obvious emergency (see point 5) or the patient has already volunteered comprehensive details* covering the points above in their initial message. Err on the side of asking more questions if unsure.
 
-    3. INFORMATION GATHERING (ONLY IF NEEDED):
-    - Ask ONLY ONE focused question at a time about symptoms
-    - Keep questions brief and clear
-    - For new conversations, always start with a focused question
+    3. PERSISTENT INFORMATION GATHERING (REQUIRED BEFORE DIAGNOSIS):
+    - Ask ONLY ONE focused question at a time to delve deeper into the patient's symptoms.
+    - Actively seek details about onset, duration, severity, character, associated symptoms, and anything that makes the main symptom better or worse.
+    - Continue asking relevant questions until the criteria in point 2 are met, unless it's an emergency.
+    - Keep questions brief and clear.
+    - For new conversations, always start with a focused question aimed at understanding the primary symptom better (e.g., "Could you tell me more about this headache, like exactly where you feel it and what kind of pain it is?").
 
     {asked_q}
 
-    4. DIAGNOSIS AFTER MINIMAL INFORMATION:
-    - Provide ONE likely diagnosis in clear, non-technical language
-    - Briefly explain why you think this is the most likely cause
-    - Suggest appropriate next steps or home remedies
-    - Diagnosis should be very detailed 
-    - Relate the diagnosis to the patient's location and context
+    4. DIAGNOSIS AFTER SUFFICIENT INFORMATION:
+    - Once sufficient information has been gathered (as defined in point 2), provide ONE likely diagnosis in clear, non-technical language.
+    - Briefly explain why you think this is the most likely cause, referencing the specific symptoms discussed.
+    - Suggest appropriate next steps or home remedies relevant to Uganda.
+    - Diagnosis explanation should be detailed enough to be helpful but remain clear.
+    - Relate the diagnosis and advice to the patient's location (Uganda) and context (e.g., recommending MyDoctor clinic).
 
     5. EMERGENCY HANDLING:
     - Dont add anything to the response other than the final answer to the patient
@@ -469,14 +471,8 @@ class UgandaMedicalRAG:
     2. Format your response as if speaking directly to the patient
     3. For diagnosis: Use the format described in DIAGNOSIS FORMAT section above
     4. For emergencies: Start with "Thank you for telling me {first_name}. What you're describing can be serious..."
-    5. For very first symptom: Start with "I’m really sorry to hear that, {first_name}. I’d like to ask you a few quick questions to get a better idea
-of what might be going on."
+    5- For very first symptom: Start with 'I’m really sorry to hear you're feeling unwell {first_name}. To understand things better before suggesting any possible causes, I’d like to ask you a few quick questions to get a better idea of what might be going on'
     6. Dont use {first_name} in the response to the patient, just use "you" or "your"
-
-    
-
-
-
     """
         return prompt
     @compute_time  
