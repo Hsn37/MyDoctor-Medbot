@@ -362,10 +362,10 @@ class UgandaMedicalRAG:
     @compute_time
     def construct_prompt(self, query: str, context: str, patient_data: Dict[str, Any], 
                     message_history: Optional[List[Dict[str, str]]] = None) -> str:
-        """Construct the improved prompt for the LLM to encourage faster diagnosis"""
-        # Convert patient_data to a defaultdict with "Unknown" as default value
+        """Construct the improved prompt for the LLM with emergency flag instructions"""
+        # Convert patient_data to a defaultdict with "" as default value
         patient = defaultdict(lambda: "", patient_data or {})
-    
+
         # Check if we have valid patient data
         has_patient_data = bool(patient["name"])
         
@@ -394,8 +394,6 @@ class UgandaMedicalRAG:
         # Format conversation history
         conversation_history, asked_q = self.format_conversation_history(message_history) if message_history else ("", [])
         
-        print('first_name: ', first_name)   
-        
         # Main prompt with improved instructions
         prompt = f"""You are a medical assistant for patients in Uganda. Help patients by asking relevant questions about their symptoms before providing any diagnosis. Follow these instructions carefully:
 
@@ -408,8 +406,8 @@ class UgandaMedicalRAG:
     - Don't start every message with greetings like "Hello" or "Hi"
 
     2. DIAGNOSIS TIMING - VERY IMPORTANT:
-    - PRIORITIZE THOROUGH INFORMATION GATHERING. Do NOT provide a diagnosis until you have gathered detailed information covering atleast the symptom's onset (when it started), duration (how long it's lasted), severity (how bad it is), character (what it feels like, e.g., sharp/dull pain, wet/dry cough), and any associated symptoms (what else is happening?).
-    - Avoid diagnosing after only one or two symptom exchanges unless it is an obvious emergency (see point 5) or the patient has already volunteered comprehensive details* covering the points above in their initial message. Err on the side of asking more questions if unsure.
+    - PRIORITIZE THOROUGH INFORMATION GATHERING. Do NOT provide a diagnosis until you have gathered detailed information covering at least the symptom's onset (when it started), duration (how long it's lasted), severity (how bad it is), character (what it feels like, e.g., sharp/dull pain, wet/dry cough), and any associated symptoms (what else is happening?).
+    - Avoid diagnosing after only one or two symptom exchanges unless it is an obvious emergency or the patient has already volunteered comprehensive details covering the points above in their initial message. Err on the side of asking more questions if unsure.
 
     3. PERSISTENT INFORMATION GATHERING (REQUIRED BEFORE DIAGNOSIS):
     - Ask ONLY ONE focused question at a time to delve deeper into the patient's symptoms.
@@ -435,7 +433,9 @@ class UgandaMedicalRAG:
         - Immediately advise seeking urgent medical attention
         - Recommend nearest clinic or hospital 
         - No additional questions for emergencies
-
+    - Include "EMERGENCY_FLAG: YES" as the last line of your response
+    - For non-emergency situations:
+    - Include "EMERGENCY_FLAG: NO" as the last line of your response
 
     6. LOCAL CONTEXT:
     - Use Ugandan terms like "hot body" for fever
@@ -560,24 +560,23 @@ class UgandaMedicalRAG:
     @compute_time
     def generate_answer_stream(self, query: str, patient_id: Optional[str] = None,
                             message_history: Optional[List[Dict[str, str]]] = None):
-        """Process a query and stream the answer with post-processing to remove reasoning"""
+        """Process a query and stream the answer with emergency flag in a single LLM call"""
         try:
-            # Store context globally for session reuse
+            # Retrieve context
             context_chunks = []
-            
-            # If no message history or very short conversation, use normal processing
             if not message_history or len(message_history) <= 1:
-                # Use a standard search for initial query
                 context_chunks = self.build_diverse_context_parallel(query)
             else:
-                # For follow-up questions
                 retrieval_query = self.build_retrieval_query(query, message_history)
                 logger.info(f"Built context-aware query: '{retrieval_query}'")
                 context_chunks = self.build_diverse_context_qdrant_batch(retrieval_query)
 
             # Handle empty context results
             if not context_chunks:
-                yield "I'm sorry, I couldn't find relevant medical information to answer your question accurately. Please contact a healthcare professional for assistance."
+                yield json.dumps({
+                    "response": "I'm sorry, I couldn't find relevant medical information to answer your question accurately. Please contact a healthcare professional for assistance.", 
+                    "is_emergency": False
+                })
                 return
             
             # Format the context chunks
@@ -585,32 +584,53 @@ class UgandaMedicalRAG:
             
             # Get patient data
             patient_data = self.get_patient_data(patient_id)
-            print("patient_data: ", patient_data)
-            # Construct prompt with context and conversation history
-            prompt = self.construct_prompt(query, formatted_context, patient_data, message_history)
             
-          
-
+            # Construct prompt (which already includes emergency flag instructions)
+            full_prompt = self.construct_prompt(query, formatted_context, patient_data, message_history)
             
- 
+            # Generate response
             response_stream = self.operouter_client.completions.create(
                 model="google/gemini-2.0-flash-001",
-                prompt=prompt,
-                stream=True,
+                prompt=full_prompt,
+                stream=False,  # Non-streaming for simpler processing
             )
-
             
-            for chunk in response_stream:
-                if hasattr(chunk, 'choices') and chunk.choices and len(chunk.choices) > 0:
-                    # Extract the text from the choice
-                    choice = chunk.choices[0]
-                    if hasattr(choice, 'text') and choice.text:
-                        yield choice.text
+            # Process the response
+            if hasattr(response_stream, 'choices') and response_stream.choices:
+                full_response = response_stream.choices[0].text
+                
+                # Extract emergency flag
+                is_emergency = False
+                response_text = full_response
+                print("full_response: ",full_response)
+                # Look for emergency flag at the end
+                if "EMERGENCY_FLAG: YES" in full_response:
+                    is_emergency = True
+                    # Remove the flag from the displayed response
+                    response_text = full_response.replace("EMERGENCY_FLAG: YES", "").strip()
+                elif "EMERGENCY_FLAG: NO" in full_response:
+                    is_emergency = False
+                    # Remove the flag from the displayed response
+                    response_text = full_response.replace("EMERGENCY_FLAG: NO", "").strip()
+                
+                # Log the emergency status
+                if is_emergency:
+                    logger.warning(f"EMERGENCY detected in query: '{query}'")
+                
+                # Return the response with emergency flag as JSON
+                yield json.dumps({
+                    "response": response_text,
+                    "is_emergency": is_emergency
+                })
             
         except Exception as e:
             logger.error(f"Error streaming response: {str(e)}")
-            yield "I apologize, but I encountered an error while processing your question. Please try again or contact support if the issue persists."
-
+            import traceback
+            logger.error(f"Traceback: {traceback.format_exc()}")
+            yield json.dumps({
+                "response": "I apologize, but I encountered an error while processing your question. Please try again or contact support if the issue persists.",
+                "is_emergency": False
+            })
 # if __name__ == "__main__":
 #     # # Simple test
 #     # rag = UgandaMedicalRAG()
