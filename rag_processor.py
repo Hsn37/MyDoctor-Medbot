@@ -429,11 +429,11 @@ class UgandaMedicalRAG:
     - Dont add anything to the response other than the final answer to the patient
     - Format your response as if speaking directly to the patient
     - Follow the response format strictly
-    - For chest pain, breathing difficulty, severe bleeding, loss of consciousness:
+    - For chest pain, breathing difficulty, severe bleeding, loss of consciousness, basically anything that is life threatening or can cause severe harm if left untreated should be flagged emergency:
         - Immediately advise seeking urgent medical attention
         - Recommend nearest clinic or hospital 
         - No additional questions for emergencies
-    - Include "EMERGENCY_FLAG: YES" as the last line of your response
+        - Include "EMERGENCY_FLAG: YES" as the last line of your response
     - For non-emergency situations:
     - Include "EMERGENCY_FLAG: NO" as the last line of your response
 

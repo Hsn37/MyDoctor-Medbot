@@ -441,12 +441,18 @@ else:
                         
                         # Stream the text and update the emergency container with each iteration
                         for partial_text in character_stream(response_text):
+                            formatted_text = partial_text.replace('\n\n', '<br><br>').replace('\n', '<br>')
                             emergency_placeholder.markdown(f"""
-                            <div style="background-color: #FFEBEE; border-left: 5px solid #C62828; 
-                                    color: #C62828; padding: 15px; border-radius: 5px; 
-                                    margin: 10px 0; font-weight: bold; animation: pulse 2s infinite;">
-                                <div style="font-size: 1.5rem; margin-bottom: 8px;">⚠️ URGENT MEDICAL ATTENTION NEEDED</div>
-                                {partial_text}
+                            <style>
+                            .emergency-message {{
+                                font-weight: bold !important;
+                            }}
+                            </style>                               
+                            <div class="emergency-message" style="background-color: #FFEBEE; border-left: 5px solid #C62828; 
+                                color: #C62828; padding: 15px; border-radius: 5px; 
+                                margin: 10px 0; animation: pulse 2s infinite;">
+                                <div style="font-size: 1.5rem; font-weight: bold; margin-bottom: 8px;">⚠️ URGENT MEDICAL ATTENTION NEEDED</div>
+                                {formatted_text}
                             </div>
                             <style>
                             @keyframes pulse {{
