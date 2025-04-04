@@ -368,7 +368,7 @@ else:
             with st.chat_message(message["role"]):
                 st.markdown(message["content"])
 
-        # Chat input
+       # Chat input section with fixed streaming implementation
         if prompt := st.chat_input("Type your symptoms or health question..."):
             # Add user message to chat history
             st.session_state.messages.append({"role": "user", "content": prompt})
@@ -379,56 +379,6 @@ else:
             
             # Generate response
             with st.chat_message("assistant"):
-                message_placeholder = st.empty()
-                
-                message_placeholder.markdown("""
-                    <div class="typing-wrapper">
-                        <div class="typing-indicator">
-                            <div class="typing-spinner"></div>
-                            <div class="typing-text">Bot is typing...</div>
-                        </div>
-                    </div>
-                    
-                    <style>
-                        /* Force proper alignment with avatar */
-                        .typing-wrapper {
-                            display: flex;
-                            align-items: center;
-                            min-height: 32px;
-                            margin: -12px 0;  /* Counteract Streamlit's default margins */
-                        }
-                        
-                        .typing-indicator {
-                            display: flex;
-                            align-items: center;
-                            gap: 8px;
-                        }
-                        
-                        .typing-spinner {
-                            width: 16px;
-                            height: 16px;
-                            border: 2px solid #f3f3f3;
-                            border-top: 2px solid #087484;
-                            border-radius: 50%;
-                            animation: spin 1s linear infinite;
-                            flex-shrink: 0;
-                        }
-                        
-                        .typing-text {
-                            color: #087484;
-                            font-style: italic;
-                            font-size: 15px;
-                        }
-                        
-                        @keyframes spin {
-                            0% { transform: rotate(0deg); }
-                            100% { transform: rotate(360deg); }
-                        }
-                    </style>
-                """, unsafe_allow_html=True)   
-
-                full_response = ""
-                
                 try:
                     # Create a proper conversation history from session state
                     conversation_history = list(st.session_state.messages)
@@ -438,30 +388,109 @@ else:
                     if st.session_state.use_patient_data and st.session_state.patient_data_submitted:
                         # Use UUID as patient ID if not provided
                         patient_id = st.session_state.patient_data.get("patient_id", "") or f"UG{int(time.time())}"
-                    
                         # Set the patient data in the RAG
                         rag.set_patient_data(patient_id, st.session_state.patient_data)
-    
-                    # Stream the response using RAG
-                    for response_chunk in rag.generate_answer_stream(
+                    
+                    # Show typing indicator
+                    message_placeholder = st.empty()
+                    message_placeholder.markdown("""
+                        <div style="display: flex; align-items: center; margin: 0;">
+                            <div style="width: 16px; height: 16px; border: 2px solid #f3f3f3; 
+                                    border-top: 2px solid #087484; border-radius: 50%; 
+                                    animation: spin 1s linear infinite; margin-right: 8px;"></div>
+                            <div style="color: #087484; font-style: italic; font-size: 15px;">Bot is typing...</div>
+                        </div>
+                        <style>
+                            @keyframes spin {
+                                0% { transform: rotate(0deg); }
+                                100% { transform: rotate(360deg); }
+                            }
+                        </style>
+                    """, unsafe_allow_html=True)
+                    
+                    # Get the complete response
+                    response_json = next(rag.generate_answer_stream(
                         query=prompt, 
                         patient_id=patient_id,
                         message_history=conversation_history
-                    ):
-                        full_response += response_chunk
-                        message_placeholder.markdown(full_response + "▌")
+                    ))
                     
-                    # Display final response
-                    message_placeholder.markdown(full_response)
+                    import json
+                    import time
+                    
+                    response_data = json.loads(response_json)
+                    response_text = response_data.get("response", "")
+                    is_emergency = response_data.get("is_emergency", False)
+                    
+                    # Clear the typing indicator
+                    message_placeholder.empty()
+                    
+                    # Create a custom text generator function with visible delay
+                    def character_stream(text, delay=0.01):
+                        """Generator that yields characters with a delay for visible streaming effect"""
+                        accumulated_text = ""
+                        for char in text:
+                            accumulated_text += char
+                            yield accumulated_text
+                            time.sleep(delay)  # Add a small delay between characters
+                    
+                    # Two different approaches depending on if it's an emergency
+                    if is_emergency:
+                        # For emergency messages, create a styled emergency message
+                        emergency_placeholder = st.empty()
+                        
+                        # Stream the text and update the emergency container with each iteration
+                        for partial_text in character_stream(response_text):
+                            emergency_placeholder.markdown(f"""
+                            <div style="background-color: #FFEBEE; border-left: 5px solid #C62828; 
+                                    color: #C62828; padding: 15px; border-radius: 5px; 
+                                    margin: 10px 0; font-weight: bold; animation: pulse 2s infinite;">
+                                <div style="font-size: 1.5rem; margin-bottom: 8px;">⚠️ URGENT MEDICAL ATTENTION NEEDED</div>
+                                {partial_text}
+                            </div>
+                            <style>
+                            @keyframes pulse {{
+                                0% {{ box-shadow: 0 0 0 0 rgba(198, 40, 40, 0.4); }}
+                                70% {{ box-shadow: 0 0 0 10px rgba(198, 40, 40, 0); }}
+                                100% {{ box-shadow: 0 0 0 0 rgba(198, 40, 40, 0); }}
+                            }}
+                            </style>
+                            """, unsafe_allow_html=True)
+                        
+                        # Log the emergency
+                        import logging
+                        logging.warning(f"EMERGENCY detected in query: '{prompt}'")
+                    else:
+                        # For normal responses, create a placeholder and update it with each iteration
+                        response_placeholder = st.empty()
+                        
+                        # Stream the text with a visible typing effect
+                        for partial_text in character_stream(response_text):
+                            response_placeholder.markdown(partial_text)
                     
                     # Add assistant response to chat history
-                    st.session_state.messages.append({"role": "assistant", "content": full_response})
+                    st.session_state.messages.append({
+                        "role": "assistant", 
+                        "content": response_text,
+                        "is_emergency": is_emergency
+                    })
                     
+                except Exception as e:
+                    error_message = "I'm sorry, but I encountered an error while processing your question. Please try again."
+                    st.error(f"Error details: {str(e)}")
+                    import traceback
+                    print(f"Error details: {traceback.format_exc()}")
+                    
+                    # Add error response to chat history
+                    st.session_state.messages.append({
+                        "role": "assistant",
+                        "content": error_message,
+                        "is_emergency": False
+                    })
                 except Exception as e:
                     error_message = f"I'm sorry, but I encountered an error while processing your question. Please try again."
                     message_placeholder.markdown(error_message)
                     st.error(f"Error details: {str(e)}")
-
         # Add disclaimer at the bottom
         st.markdown("""
         <div class="disclaimer">
