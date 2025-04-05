@@ -363,150 +363,177 @@ else:
                 {"role": "assistant", "content": welcome_message}
             )
 
-        # Display chat messages
-        for message in st.session_state.messages:
-            with st.chat_message(message["role"]):
-                st.markdown(message["content"])
-
-       # Chat input section with fixed streaming implementation
-        if prompt := st.chat_input("Type your symptoms or health question..."):
-            # Add user message to chat history
-            st.session_state.messages.append({"role": "user", "content": prompt})
+        # Track if we're currently processing a message
+        if "is_processing" not in st.session_state:
+            st.session_state.is_processing = False
             
-            # Display user message in the chat UI
-            with st.chat_message("user"):
-                st.markdown(prompt)
+        # Create a container for the chat display
+        chat_container = st.container()
+        
+        # Add user input at the bottom of the page (this remains at the bottom)
+        user_input = st.chat_input("Type your symptoms or health question...")
+        
+        # Handle new user input
+        if user_input and not st.session_state.is_processing:
+            # Set processing flag to true to prevent duplicate processing
+            st.session_state.is_processing = True
             
-            # Generate response
-            with st.chat_message("assistant"):
-                try:
-                    # Create a proper conversation history from session state
-                    conversation_history = list(st.session_state.messages)
+            # Add user message to history but don't display yet
+            st.session_state.messages.append({"role": "user", "content": user_input})
+            
+            # Force a rerun to display the updated chat (including the new user message)
+            st.rerun()
+        
+        # Display all messages in the container
+        with chat_container:
+            # Show all messages except the last one if we're processing
+            for i, message in enumerate(st.session_state.messages):
+                # Skip the last message if it's from the assistant and we're still processing
+                if i == len(st.session_state.messages) - 1 and message["role"] == "assistant" and st.session_state.is_processing:
+                    continue
                     
-                    # Get patient data if enabled
-                    patient_id = None
-                    if st.session_state.use_patient_data and st.session_state.patient_data_submitted:
-                        # Use UUID as patient ID if not provided
-                        patient_id = st.session_state.patient_data.get("patient_id", "") or f"UG{int(time.time())}"
-                        # Set the patient data in the RAG
-                        rag.set_patient_data(patient_id, st.session_state.patient_data)
-                    
-                    # Show typing indicator
-                    message_placeholder = st.empty()
-                    message_placeholder.markdown("""
-                        <div style="display: flex; align-items: center; margin: 0;">
-                            <div style="width: 16px; height: 16px; border: 2px solid #f3f3f3; 
-                                    border-top: 2px solid #087484; border-radius: 50%; 
-                                    animation: spin 1s linear infinite; margin-right: 8px;"></div>
-                            <div style="color: #087484; font-style: italic; font-size: 15px;">Bot is typing...</div>
+                with st.chat_message(message["role"]):
+                    # Display message content
+                    if message.get("is_emergency", False):
+                        st.markdown(f"""
+                                    
+                        <div style="background-color: #FFEBEE; border-left: 5px solid #C62828; 
+                            color: #C62828; padding: 15px; border-radius: 5px; 
+                            margin: 10px 0; font-weight: bold; animation: pulse 2s infinite;">
+                            <div style="font-size: 1.5rem; margin-bottom: 8px;">⚠️ URGENT MEDICAL ATTENTION NEEDED</div>
+                            {message["content"]}
                         </div>
                         <style>
-                            @keyframes spin {
-                                0% { transform: rotate(0deg); }
-                                100% { transform: rotate(360deg); }
-                            }
+                        @keyframes pulse {{
+                            0% {{ box-shadow: 0 0 0 0 rgba(198, 40, 40, 0.4); }}
+                            70% {{ box-shadow: 0 0 0 10px rgba(198, 40, 40, 0); }}
+                            100% {{ box-shadow: 0 0 0 0 rgba(198, 40, 40, 0); }}
+                        }}
                         </style>
-                    """, unsafe_allow_html=True)
-                    
-                    # Get the complete response
-                    response_json = next(rag.generate_answer_stream(
-                        query=prompt, 
-                        patient_id=patient_id,
-                        message_history=conversation_history
-                    ))
-                    
-                    import json
-                    import time
-                    
-                    response_data = json.loads(response_json)
-                    response_text = response_data.get("response", "")
-                    is_emergency = response_data.get("is_emergency", False)
-                    
-                    # Clear the typing indicator
-                    message_placeholder.empty()
-                    
-                    # Create a custom text generator function with visible delay
-                    def character_stream(text, delay=0.01):
-                        """Generator that yields characters with a delay for visible streaming effect"""
-                        accumulated_text = ""
-                        for char in text:
-                            accumulated_text += char
-                            yield accumulated_text
-                            time.sleep(delay)  # Add a small delay between characters
-                    
-                    # Two different approaches depending on if it's an emergency
-                    if is_emergency:
-                        # For emergency messages, create a styled emergency message
-                        emergency_placeholder = st.empty()
+                        """, unsafe_allow_html=True)
+                    else:
+                        st.markdown(message["content"])
+            
+            # If the last message was from a user and we're still processing, show the assistant response
+            if st.session_state.is_processing and st.session_state.messages[-1]["role"] == "user":
+                prompt = st.session_state.messages[-1]["content"]
+                
+                # Show assistant message with typing indicator
+                with st.chat_message("assistant"):
+                    try:
+                        # Create a proper conversation history from session state (excluding the last message)
+                        conversation_history = list(st.session_state.messages)
                         
-                        # Stream the text and update the emergency container with each iteration
-                        for partial_text in character_stream(response_text):
-                            formatted_text = partial_text.replace('\n\n', '<br><br>').replace('\n', '<br>')
-                            emergency_placeholder.markdown(f"""
-                            <style>
-                            .emergency-message {{
-                                font-weight: bold !important;
-                            }}
-                            </style>                               
-                            <div class="emergency-message" style="background-color: #FFEBEE; border-left: 5px solid #C62828; 
-                                color: #C62828; padding: 15px; border-radius: 5px; 
-                                margin: 10px 0; animation: pulse 2s infinite;">
-                                <div style="font-size: 1.5rem; font-weight: bold; margin-bottom: 8px;">⚠️ URGENT MEDICAL ATTENTION NEEDED</div>
-                                {formatted_text}
+                        # Get patient data if enabled
+                        patient_id = None
+                        if st.session_state.use_patient_data and st.session_state.patient_data_submitted:
+                            patient_id = st.session_state.patient_data.get("patient_id", "") or f"UG{int(time.time())}"
+                            # Set the patient data in the RAG
+                            rag.set_patient_data(patient_id, st.session_state.patient_data)
+                        
+                        # Show typing indicator
+                        response_placeholder = st.empty()
+                        response_placeholder.markdown("""
+                            <div style="display: flex; align-items: center; margin: 0;">
+                                <div style="width: 16px; height: 16px; border: 2px solid #f3f3f3; 
+                                    border-top: 2px solid #087484; border-radius: 50%; 
+                                    animation: spin 1s linear infinite; margin-right: 8px;"></div>
+                                <div style="color: #087484; font-style: italic; font-size: 15px;">Bot is typing...</div>
                             </div>
                             <style>
-                            @keyframes pulse {{
-                                0% {{ box-shadow: 0 0 0 0 rgba(198, 40, 40, 0.4); }}
-                                70% {{ box-shadow: 0 0 0 10px rgba(198, 40, 40, 0); }}
-                                100% {{ box-shadow: 0 0 0 0 rgba(198, 40, 40, 0); }}
-                            }}
+                                @keyframes spin {
+                                    0% { transform: rotate(0deg); }
+                                    100% { transform: rotate(360deg); }
+                                }
                             </style>
-                            """, unsafe_allow_html=True)
+                        """, unsafe_allow_html=True)
                         
-                        # Log the emergency
-                        import logging
-                        logging.warning(f"EMERGENCY detected in query: '{prompt}'")
-                    else:
-                        # For normal responses, create a placeholder and update it with each iteration
-                        response_placeholder = st.empty()
+                        # Get the complete response
+                        response_json = next(rag.generate_answer_stream(
+                            query=prompt, 
+                            patient_id=patient_id,
+                            message_history=conversation_history
+                        ))
                         
-                        # Stream the text with a visible typing effect
-                        for partial_text in character_stream(response_text):
-                            response_placeholder.markdown(partial_text)
-                    
-                    # Add assistant response to chat history
-                    st.session_state.messages.append({
-                        "role": "assistant", 
-                        "content": response_text,
-                        "is_emergency": is_emergency
-                    })
-                    
-                except Exception as e:
-                    error_message = "I'm sorry, but I encountered an error while processing your question. Please try again."
-                    st.error(f"Error details: {str(e)}")
-                    import traceback
-                    print(f"Error details: {traceback.format_exc()}")
-                    
-                    # Add error response to chat history
-                    st.session_state.messages.append({
-                        "role": "assistant",
-                        "content": error_message,
-                        "is_emergency": False
-                    })
-                except Exception as e:
-                    error_message = f"I'm sorry, but I encountered an error while processing your question. Please try again."
-                    message_placeholder.markdown(error_message)
-                    st.error(f"Error details: {str(e)}")
-        # Add disclaimer at the bottom
-        st.markdown("""
-        <div class="disclaimer">
-            <p><strong>Medical Disclaimer:</strong> This chatbot provides general information and is not a substitute for professional medical advice, diagnosis, or treatment. Always seek the advice of your physician or other qualified health provider with any questions you may have regarding a medical condition.</p>
-            <p>For in-person care, visit your nearest MyDoctor clinic.</p>
-        </div>
-        """, unsafe_allow_html=True)
-
+                        import json
+                        import time
+                        
+                        response_data = json.loads(response_json)
+                        response_text = response_data.get("response", "")
+                        is_emergency = response_data.get("is_emergency", False)
+                        
+                        # Create a custom text generator function with visible delay
+                        def character_stream(text, delay=0.01):
+                            """Generator that yields characters with a delay for visible streaming effect"""
+                            accumulated_text = ""
+                            for char in text:
+                                accumulated_text += char
+                                yield accumulated_text
+                                time.sleep(delay)  # Add a small delay between characters
+                        
+                        # Stream the content
+                        if is_emergency:
+                            # For emergency messages
+                            for partial_text in character_stream(response_text):
+                                formatted_text = partial_text.replace('\n\n', '<br><br>').replace('\n', '<br>')
+                                response_placeholder.markdown(f"""
+                                                              
+                                <div style="background-color: #FFEBEE; border-left: 5px solid #C62828; 
+                                    color: #C62828; padding: 15px; border-radius: 5px; 
+                                    margin: 10px 0; font-weight: bold; animation: pulse 2s infinite;">
+                                    <div style="font-size: 1.5rem; margin-bottom: 8px;">⚠️ URGENT MEDICAL ATTENTION NEEDED</div>
+                                    {formatted_text}
+                                </div>
+                                <style>
+                                @keyframes pulse {{
+                                    0% {{ box-shadow: 0 0 0 0 rgba(198, 40, 40, 0.4); }}
+                                    70% {{ box-shadow: 0 0 0 10px rgba(198, 40, 40, 0); }}
+                                    100% {{ box-shadow: 0 0 0 0 rgba(198, 40, 40, 0); }}
+                                }}
+                                </style>
+                                """, unsafe_allow_html=True)
+                        else:
+                            # For normal responses
+                            for partial_text in character_stream(response_text):
+                                response_placeholder.markdown(partial_text)
+                        
+                        # Add assistant response to chat history
+                        st.session_state.messages.append({
+                            "role": "assistant", 
+                            "content": response_text,
+                            "is_emergency": is_emergency
+                        })
+                        
+                        # Reset processing flag
+                        st.session_state.is_processing = False
+                        
+                        # Force a rerun to update the chat display
+                        st.rerun()
+                        
+                    except Exception as e:
+                        error_message = "I'm sorry, but I encountered an error while processing your question. Please try again."
+                        st.error(f"Error details: {str(e)}")
+                        import traceback
+                        print(f"Error details: {traceback.format_exc()}")
+                        
+                        # Add error response to chat history
+                        st.session_state.messages.append({
+                            "role": "assistant",
+                            "content": error_message,
+                            "is_emergency": False
+                        })
+                        
+                        # Reset processing flag
+                        st.session_state.is_processing = False
+                        
+                        # Force a rerun to update the chat display
+                        st.rerun()
+                        
     except Exception as e:
         st.error(f"An unexpected error occurred: {str(e)}")
         
         if st.button("Retry"):
+            # Reset processing flag if it exists
+            if "is_processing" in st.session_state:
+                st.session_state.is_processing = False
             st.rerun()

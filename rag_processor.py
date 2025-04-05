@@ -362,7 +362,7 @@ class UgandaMedicalRAG:
     @compute_time
     def construct_prompt(self, query: str, context: str, patient_data: Dict[str, Any], 
                     message_history: Optional[List[Dict[str, str]]] = None) -> str:
-        """Construct the improved prompt for the LLM with emergency flag instructions"""
+        """Construct the improved prompt for the LLM with JSON structured output instructions"""
         # Convert patient_data to a defaultdict with "" as default value
         patient = defaultdict(lambda: "", patient_data or {})
 
@@ -394,7 +394,7 @@ class UgandaMedicalRAG:
         # Format conversation history
         conversation_history, asked_q = self.format_conversation_history(message_history) if message_history else ("", [])
         
-        # Main prompt with improved instructions
+        # Main prompt with improved instructions for JSON output
         prompt = f"""You are a medical assistant for patients in Uganda. Help patients by asking relevant questions about their symptoms before providing any diagnosis. Follow these instructions carefully:
 
     If patient first name {first_name} is empty, use "you" or "your" in the response.
@@ -433,9 +433,6 @@ class UgandaMedicalRAG:
         - Immediately advise seeking urgent medical attention
         - Recommend nearest clinic or hospital 
         - No additional questions for emergencies
-        - Include "EMERGENCY_FLAG: YES" as the last line of your response
-    - For non-emergency situations:
-    - Include "EMERGENCY_FLAG: NO" as the last line of your response
 
     6. LOCAL CONTEXT:
     - Use Ugandan terms like "hot body" for fever
@@ -447,13 +444,36 @@ class UgandaMedicalRAG:
     - Mention current medications when relevant
     - Adjust advice based on medical history
 
+    8. RESPONSE FORMAT - VERY IMPORTANT:
+    - You MUST format your response as a valid JSON object with these exact fields:
+    "response": "Your actual response text here...",
+    "is_emergency": true or false (boolean, not string)
 
-    8. Final Response:
-    - Detail the diagnosis and next steps clearly
-    - Relate to the patient's context and location
-    - Avoid unnecessary medical jargon
-    - Use simple language for better understanding
 
+
+
+
+    - In the "response" field:
+    * Format your response as if speaking directly to the patient
+    * Provide only the final answer to the patient
+    * For very first symptom: Start with 'I’m really sorry to hear you're feeling unwell {first_name}. To understand things better before suggesting any possible causes, I’d like to ask you a few quick questions to get a better idea of what might be going on'. However, also be smart enough to not use this line if someone is saying completely different thing in the start which is not related to symptoms. Respond accordingly in a nice polite way in this case.
+    * For diagnosis: Use clear, non-technical language
+    * For emergencies: Start with "Thank you for telling me {first_name}. What you're describing can be serious...". However, also be smart enough to not use this line if someone is saying I am going to die or help me please or things along these lines. Respond accordingly to these.
+    * Don't use {first_name} in the response, just use "you" or "your"
+
+    - Set the "is_emergency" field to true ONLY for situations requiring immediate medical attention (e.g., severe chest pain, difficulty breathing, signs of stroke, severe bleeding, etc.)
+
+    Example JSON response format for non-emergency:
+    {{
+    "response": "I understand you've been having headaches. Could you tell me more about when they started and how severe they are?",
+    "is_emergency": false
+    }}
+
+    Example JSON response format for emergency:
+    {{
+    "response": "What you're describing sounds like a medical emergency. Chest pain that radiates to your arm and jaw, along with difficulty breathing, could indicate a heart attack. Please seek immediate medical attention at the nearest hospital emergency department.",
+    "is_emergency": true
+    }}
 
     {patient_info}
 
@@ -466,15 +486,10 @@ class UgandaMedicalRAG:
 
     CURRENT QUERY: {query}
 
-    RESPONSE FORMAT:
-    1. Provide only the final answer to the patient in any response
-    2. Format your response as if speaking directly to the patient
-    3. For diagnosis: Use the format described in DIAGNOSIS FORMAT section above
-    4. For emergencies: Start with "Thank you for telling me {first_name}. What you're describing can be serious...". However, also be smart enough to not use this line if someone is saying I am going to die or help me please or things along these lines. Respond accordingly to these.
-    5- For very first symptom: Start with 'I’m really sorry to hear you're feeling unwell {first_name}. To understand things better before suggesting any possible causes, I’d like to ask you a few quick questions to get a better idea of what might be going on'. However, also be smart enough to not use this line if someone is saying completely different thing in the start which is not related to symptoms. Respond accordingly in a nice polite way in this case.
-    6. Dont use {first_name} in the response to the patient, just use "you" or "your"
+    IMPORTANT: Your entire response must be a valid, properly formatted JSON object exactly as shown in the examples. The response field should contain your complete response to the patient, and the is_emergency field must be a boolean (true/false).
     """
         return prompt
+
     @compute_time  
     def build_retrieval_query(self, current_query: str, message_history: List[Dict[str, str]]) -> str:
         """Build a comprehensive query using conversation history"""
@@ -560,7 +575,7 @@ class UgandaMedicalRAG:
     @compute_time
     def generate_answer_stream(self, query: str, patient_id: Optional[str] = None,
                             message_history: Optional[List[Dict[str, str]]] = None):
-        """Process a query and stream the answer with emergency flag in a single LLM call"""
+        """Process a query and return a JSON response with an explicit emergency flag"""
         try:
             # Retrieve context
             context_chunks = []
@@ -585,7 +600,7 @@ class UgandaMedicalRAG:
             # Get patient data
             patient_data = self.get_patient_data(patient_id)
             
-            # Construct prompt (which already includes emergency flag instructions)
+            # Construct prompt with JSON output instructions
             full_prompt = self.construct_prompt(query, formatted_context, patient_data, message_history)
             
             # Generate response
@@ -597,31 +612,59 @@ class UgandaMedicalRAG:
             
             # Process the response
             if hasattr(response_stream, 'choices') and response_stream.choices:
-                full_response = response_stream.choices[0].text
+                full_response = response_stream.choices[0].text.strip()
                 
-                # Extract emergency flag
-                is_emergency = False
-                response_text = full_response
-                print("full_response: ",full_response)
-                # Look for emergency flag at the end
-                if "EMERGENCY_FLAG: YES" in full_response:
-                    is_emergency = True
-                    # Remove the flag from the displayed response
-                    response_text = full_response.replace("EMERGENCY_FLAG: YES", "").strip()
-                elif "EMERGENCY_FLAG: NO" in full_response:
-                    is_emergency = False
-                    # Remove the flag from the displayed response
-                    response_text = full_response.replace("EMERGENCY_FLAG: NO", "").strip()
-                
-                # Log the emergency status
-                if is_emergency:
-                    logger.warning(f"EMERGENCY detected in query: '{query}'")
-                
-                # Return the response with emergency flag as JSON
-                yield json.dumps({
-                    "response": response_text,
-                    "is_emergency": is_emergency
-                })
+                # Try to parse JSON response
+                try:
+                    # Clean up any potential issues with JSON formatting
+                    # Some models might include markdown code block markers
+                    if full_response.startswith("```json"):
+                        full_response = full_response.replace("```json", "", 1)
+                    if full_response.endswith("```"):
+                        full_response = full_response.rsplit("```", 1)[0]
+                    
+                    full_response = full_response.strip()
+                    
+                    # Parse JSON response
+                    response_data = json.loads(full_response)
+                    
+                    # Ensure required fields are present
+                    if "response" not in response_data:
+                        response_data["response"] = "I apologize, but I encountered an error while processing your question."
+                    
+                    if "is_emergency" not in response_data:
+                        # If missing emergency flag, check text for emergency indicators
+                        emergency_indicators = ["emergency", "immediate", "urgent", "call ambulance", 
+                                            "go to hospital", "911", "life-threatening"]
+                        response_text = response_data["response"].lower()
+                        response_data["is_emergency"] = any(ind in response_text for ind in emergency_indicators)
+                    
+                    # Log the emergency status
+                    if response_data["is_emergency"]:
+                        logger.warning(f"EMERGENCY detected in query: '{query}'")
+                    
+                    # Return the structured response
+                    yield json.dumps(response_data)
+                    
+                except json.JSONDecodeError:
+                    # Handle case where model didn't return valid JSON
+                    logger.warning(f"Failed to parse JSON from LLM response: {full_response}")
+                    
+                    # Check for emergency indicators in the text
+                    emergency_indicators = ["emergency", "immediate", "urgent", "call ambulance", 
+                                        "go to hospital", "911", "life-threatening"]
+                    is_emergency = any(ind in full_response.lower() for ind in emergency_indicators)
+                    
+                    # Create properly formatted JSON
+                    result = {
+                        "response": full_response,
+                        "is_emergency": is_emergency
+                    }
+                    
+                    if is_emergency:
+                        logger.warning(f"Emergency detected through text analysis in query: '{query}'")
+                    
+                    yield json.dumps(result)
             
         except Exception as e:
             logger.error(f"Error streaming response: {str(e)}")
